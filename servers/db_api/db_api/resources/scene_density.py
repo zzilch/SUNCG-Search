@@ -1,0 +1,86 @@
+from flask import jsonify
+
+from flask_restful import Resource
+from flask_restful.utils import cors
+
+from webargs import fields
+from webargs.flaskparser import use_args, use_kwargs, parser
+
+from db_api import cursor
+from ..util import parseData
+
+cmd_createtable = """
+DROP TABLE IF EXISTS t1;
+CREATE TEMPORARY TABLE t1 (
+	SELECT
+		scene_id,
+		scene_objs / scene_area as obj_area_ratio
+	FROM
+	(
+		SELECT 
+			scene_id,
+			SUM(area) as scene_area,
+            SUM(num_objects) as scene_objs
+		FROM levels
+		GROUP BY
+			scene_id
+	) tmp
+    WHERE
+        scene_objs != 0 AND
+        scene_area != 0
+    ORDER BY
+		obj_area_ratio %s
+	LIMIT
+		300
+);
+"""
+
+cmd_query = """
+SELECT
+	rooms.scene_id,
+    rooms.level_num,
+    rooms.room_num,
+    t1.obj_area_ratio
+FROM
+	rooms
+JOIN t1 ON
+	rooms.scene_id = t1.scene_id
+"""
+
+def exec_cmd_createtables(order):
+    cursor.execute(cmd_createtable % order)
+
+def exec_cmd_query():
+    cursor.execute(cmd_query)
+
+class SceneDense(Resource):
+    @cors.crossdomain(origin='*')
+    def get(self):
+        exec_cmd_createtables('DESC')
+        exec_cmd_query()
+        data = cursor.fetchall()
+        
+        scene_return, level_return, room_return = parseData(data)
+        return jsonify({'scene_results': scene_return,
+                'level_results': level_return,
+                'room_results' : room_return}), 200
+
+class SceneSparse(Resource):
+    @cors.crossdomain(origin='*')
+    def get(self):
+        exec_cmd_createtables('ASC')
+        exec_cmd_query()
+        data = cursor.fetchall()
+        
+        scene_return, level_return, room_return = parseData(data)
+        return jsonify({'scene_results': scene_return,
+                'level_results': level_return,
+                'room_results' : room_return}), 200
+
+
+
+
+
+
+
+
